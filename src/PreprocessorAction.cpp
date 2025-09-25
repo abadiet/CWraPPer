@@ -62,7 +62,11 @@ void PreprocessorFinder::InclusionDirective(clang::SourceLocation HashLoc,
             if (IsAngled) {
                 file << "<" << FileName.str() << ">\n";
             } else {
-                file << "\"" << FileName.str() << "\"\n";
+                auto name = FileName.str();
+                if (name.substr(name.size() - 2) == "pp") {
+                    name = name.substr(0, name.size() - 2);
+                }
+                file << "\"" << name << "\"\n";
             }
             file.close();
         } else {

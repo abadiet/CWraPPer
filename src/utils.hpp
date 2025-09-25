@@ -2,14 +2,17 @@
 #define CWRAPPER_UTILS_HPP
 
 #include <string>
-#include "matcher/NamespaceDefinition.hpp"
+#include "Namespaces.hpp"
+
 
 void setupOutput(const std::string& from, const std::string& to);
 
-void terminateOutput(matcher::NamespaceDefinition& nsDef);
+void terminateOutput(Namespaces& namespaces);
 
 std::string getNewFilePath(const std::string& origin);
 
 void setupHeaderFile(const std::string& filePath, const std::string& origin);
+
+std::string normalizeFileName(const std::string& name);
 
 #endif /* CWRAPPER_UTILS_HPP */

@@ -19,12 +19,12 @@ void setupOutput(const std::string& from, const std::string& to) {
     if (file.is_open()) {
         file << "#ifndef CWRAPPER_CWRAPPER_H\n"
             << "#define CWRAPPER_CWRAPPER_H\n"
-            << "\n"
+            << '\n'
             << "/* Parameters */\n"
             << "// #define CW_PREFIX pre /* uncomment to add a prefix to every name */\n"
             << "// #define CW_POSTFIX post /* uncomment to add a postfix to every name */\n"
             << "#define CW_SEPARATOR _ /* names' separator */\n"
-            << "\n"
+            << '\n'
             << "/* Utils */\n"
             << "#define CW_CONCAT3(a, b, c) a ## b ## c\n"
             << "#define CW_CC3EX(a, b, c) CW_CONCAT3(a, b, c)\n"
@@ -32,7 +32,7 @@ void setupOutput(const std::string& from, const std::string& to) {
             << "#define CW_BUILD_SPACE_ABSOLUTE(b) b\n"
             << "#define CW_SWITCH_BUILD_SPACE(_1, _2, name, ...) name\n"
             << "#define CW_BUILD_SPACE(...) CW_SWITCH_BUILD_SPACE(__VA_ARGS__, CW_BUILD_SPACE_RELATIVE, CW_BUILD_SPACE_ABSOLUTE)(__VA_ARGS__)\n"
-            << "\n"
+            << '\n'
             << "/* Name Retrieving */\n"
             << "#if defined(CW_PREFIX) && defined(CW_POSTFIX)\n"
             << "    #define CW_NAME_SPACE() CW_CC3EX(CW_PREFIX, CW_SEPARATOR, CW_CC3EX(CW_SPACE, CW_SEPARATOR, CW_POSTFIX))\n"
@@ -53,7 +53,9 @@ void setupOutput(const std::string& from, const std::string& to) {
             << "#endif\n"
             << "#define CW_SWITCH_NAME(_1, _2, name, ...) name\n"
             << "#define CW(...) CW_SWITCH_NAME(__VA_OPT__(__VA_ARGS__,) CW_NAME_WITH_SPACE, CW_NAME_AT_SPACE, CW_NAME_SPACE)(__VA_ARGS__)\n"
-            << "\n"
+            << '\n'
+            << "#define CW_root CW_BUILD_SPACE(root)\n"
+            << '\n'
             << "#endif /* CWRAPPER_CWRAPPER_H */\n";
         file.close();
     } else {
@@ -62,9 +64,9 @@ void setupOutput(const std::string& from, const std::string& to) {
     }
 }
 
-void terminateOutput(matcher::NamespaceDefinition& nsDef) {
+void terminateOutput(Namespaces& namespaces) {
     /* close namespaces */
-    nsDef.terminate();
+    namespaces.terminate();
 
     /* For each .cpp files in "to" */
     for (const auto& entry : std::filesystem::recursive_directory_iterator(to)) {
@@ -90,15 +92,13 @@ void terminateOutput(matcher::NamespaceDefinition& nsDef) {
         ) {
             std::ofstream file(entry.path(), std::ios::app);
             if (file.is_open()) {
-                auto name = entry.path().filename().string();
-                std::replace(name.begin(), name.end(), '.', '_');
-                std::replace(name.begin(), name.end(), ' ', '_');
-                std::transform(name.begin(), name.end(), name.begin(), ::toupper);
                 file << "#ifdef __cplusplus\n"
                     << "}\n"
                     << "#endif /* __cplusplus */\n"
-                    << "\n"
-                    << "#endif /* CWRAPPER_" << name << " */\n";
+                    << '\n'
+                    << "#endif /* CWRAPPER_"
+                    << normalizeFileName(entry.path().filename().string())
+                    << " */\n";
                 file.close();
             } else {
                 std::cerr << "Could not open file: " << entry.path().string()
@@ -144,15 +144,17 @@ void setupHeaderFile(const std::string& filePath, const std::string& origin) {
         if (file.is_open()) {
             const auto pathToRoot = std::filesystem::relative(
                 to, p.parent_path()).string() + "/";
-            file << "#pragma once\n"
-                << "\n"
+            const auto name = normalizeFileName(p.filename().string());
+            file << "#ifndef CWRAPPER_" << name << '\n'
+                << "#define CWRAPPER_" << name << '\n'
+                << '\n'
                 << "#include \"" << pathToRoot << "CWraPPer.h\"\n"
-                << "\n"
+                << '\n'
                 << "#ifdef __cplusplus\n"
                 << "extern \"C\" {\n"
                 << "#endif /* __cplusplus */\n"
-                << "\n"
-                << "\n";
+                << '\n'
+                << '\n';
             file.close();
         } else {
             std::cerr << "Could not create file: " << filePath << std::endl;
@@ -168,12 +170,12 @@ void setupHeaderFile(const std::string& filePath, const std::string& origin) {
             if (file.is_open()) {
                 file << "#include \"" << p.filename().string() << "\"\n"
                     << "#include \"" << origin << "\"\n"
-                    << "\n"
+                    << '\n'
                     << "#ifdef __cplusplus\n"
                     << "extern \"C\" {\n"
                     << "#endif /* __cplusplus */\n"
-                    << "\n"
-                    << "\n";
+                    << '\n'
+                    << '\n';
                 file.close();
             } else {
                 std::cerr << "Could not create file: " << cPath.string()
@@ -181,4 +183,12 @@ void setupHeaderFile(const std::string& filePath, const std::string& origin) {
             }
         }
     }
+}
+
+std::string normalizeFileName(const std::string& name) {
+    auto res = name;
+    std::replace(res.begin(), res.end(), '.', '_');
+    std::replace(res.begin(), res.end(), ' ', '_');
+    std::transform(res.begin(), res.end(), res.begin(), ::toupper);
+    return res;
 }

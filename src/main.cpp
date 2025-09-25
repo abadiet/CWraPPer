@@ -1,5 +1,5 @@
 #include "utils.hpp"
-#include "matcher/NamespaceDefinition.hpp"
+#include "Namespaces.hpp"
 #include "matcher/TypeDefinition.hpp"
 #include "matcher/FunctionDefinition.hpp"
 #include "PreprocessorAction.hpp"
@@ -21,7 +21,7 @@
         case 2:                                                                \
             llvm::errs()                                                       \
                 << "Some files were skipped due to missing compile commands."  \
-                << "\n";                                                       \
+                << '\n';                                                       \
             break;                                                             \
         default:                                                               \
             llvm::errs() << "Unknown error\n";                                 \
@@ -59,16 +59,17 @@ int main(int argc, const char** argv) {
 
     RUN(clang::tooling::newFrontendActionFactory<PreprocessorAction>())
 
+    Namespaces namespaces;
+
     {
         clang::ast_matchers::MatchFinder finder;
-        matcher::NamespaceDefinition namespaceDefinition(finder);
-        matcher::TypeDefinition typeDefinition(finder, namespaceDefinition);
-        matcher::FunctionDefinition functionDefinition(finder);
+        matcher::TypeDefinition typeDefinition(finder, namespaces);
+        matcher::FunctionDefinition functionDefinition(finder, namespaces);
         RUN(clang::tooling::newFrontendActionFactory(&finder))
 
-        terminateOutput(namespaceDefinition);
     }
 
+    terminateOutput(namespaces);
 
     return 0;
 }

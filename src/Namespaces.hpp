@@ -1,23 +1,21 @@
-#ifndef CWRAPPER_MATCHER_NAMESPACEDEFINITION_HPP
-#define CWRAPPER_MATCHER_NAMESPACEDEFINITION_HPP
+#ifndef CWRAPPER_MATCHER_NAMESPACES_HPP
+#define CWRAPPER_MATCHER_NAMESPACES_HPP
 
 #include <clang/ASTMatchers/ASTMatchers.h>
-#include <clang/ASTMatchers/ASTMatchFinder.h>
+#include <clang/AST/Decl.h>
 #include <unordered_map>
+#include <vector>
+#include <string>
 
 
-namespace matcher {
-
-class NamespaceDefinition :
-    public clang::ast_matchers::MatchFinder::MatchCallback {
+class Namespaces {
 public:
-    NamespaceDefinition(clang::ast_matchers::MatchFinder& finder);
+    Namespaces() = default;
 
-    void run(const clang::ast_matchers::MatchFinder::MatchResult& Result)
-        override;
+    std::string type2CWDef(const std::string& filepath,
+        const clang::QualType& type);
 
-    void updateNS(const std::string& filepath,
-        const std::vector<std::string>& nss);
+    void update(const std::string& filepath, const clang::DeclContext* context);
 
     void terminate();
 
@@ -31,20 +29,22 @@ private:
         Namespace(Namespace&& other) noexcept = default;
         Namespace& operator=(const Namespace& other) = default;
         Namespace& operator=(Namespace&& other) noexcept = default;
+        std::string type2CWDef(const clang::QualType& type);
         void push(const std::string& name);
         void pop(bool redefine = true);
         void set(const std::vector<std::string>& nss);
         void terminate();
         std::string toString(const std::string& separator = "_") const;
     private:
-        void _setRoot(bool define = false);
+        void _setRoot(bool undefSpace = true);
         std::string _filepath;
         std::vector<std::string> _nss;
     };
 
+    static std::vector<std::string> _getFullName(
+        const clang::DeclContext* context);
+
     std::unordered_map<std::string, Namespace> _curNSs;
 };
 
-} /* namespace macther */
-
-#endif /* CWRAPPER_MATCHER_NAMESPACEDEFINITION_HPP */
+#endif /* CWRAPPER_MATCHER_NAMESPACES_HPP */

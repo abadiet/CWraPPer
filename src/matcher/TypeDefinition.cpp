@@ -7,8 +7,8 @@
 
 
 matcher::TypeDefinition::TypeDefinition(
-    clang::ast_matchers::MatchFinder& finder, NamespaceDefinition& nsDef)
-    : _nsDef(nsDef)
+    clang::ast_matchers::MatchFinder& finder, Namespaces& namespaces)
+    : _namespaces(namespaces)
 {
     {
         auto matcher = clang::ast_matchers::tagDecl(
@@ -59,31 +59,22 @@ void matcher::TypeDefinition::run(
             << " ---> " << to << std::endl;
 #endif /* CWRAPPER_DEBUG */
 
+        /* Ensure the file exists */
         setupHeaderFile(to, from.str());
 
+        /* Update the namespaces */
+        _namespaces.update(to, obj->getDeclContext());
+
+        /* Write the typedef */
         std::ofstream file(to, std::ios::app);
         if (file.is_open()) {
-            /* Update the namespace (if we left some) */
-            /* get the namespaces */
-            std::vector<std::string> nss;
-            nss.push_back(obj->getDeclContext()
-                ->getEnclosingNamespaceContext()->getDeclKindName());
-            while (nss.back() != "TranslationUnit") {
-                nss.push_back(obj->getDeclContext()
-                    ->getEnclosingNamespaceContext()->getDeclKindName());
-            }
-            nss.pop_back(); /* remove TranslationUnit */
-            std::reverse(nss.begin(), nss.end());
-
-            /* update the current namespace */
-            _nsDef.updateNS(to, nss);
-
             auto type = Result.Context->getTypeDeclType(obj).getCanonicalType()
                 .getAsString();
             /* TODO consider using struct for class definitions */
             if (type.substr(0, 6) == "class ") type = "void";
             file << "typedef " << type << " CW(" << obj->getNameAsString()
-                << ");\n";
+                << ");\n"
+                << '\n';
             file.close();
         } else {
             std::cerr << "Could not open file: " << to << std::endl;
