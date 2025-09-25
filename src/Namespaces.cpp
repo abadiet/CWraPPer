@@ -1,10 +1,18 @@
 #include "Namespaces.hpp"
 #include <iostream>
-#include <fstream>
 
+
+const std::string Namespaces::_stdlibTypes[28] = {
+    "int8_t", "int16_t","int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t",
+    "uint64_t", "int_least8_t", "int_least16_t", "int_least32_t",
+    "int_least64_t", "uint_least8_t", "uint_least16_t", "uint_least32_t",
+    "uint_least64_t", "int_fast8_t", "int_fast16_t", "int_fast32_t",
+    "int_fast64_t", "uint_fast8_t", "uint_fast16_t", "uint_fast32_t",
+    "uint_fast64_t", "intptr_t", "uintptr_t", "intmax_t", "uintmax_t"
+};
 
 /* forward declaration from utils.hpp */
-std::string getSourceFromHeader(const std::string& header);
+std::string getSourceFromHeader(const std::string& _header);
 
 
 std::string Namespaces::type2CWDef(const std::string& filepath,
@@ -12,9 +20,9 @@ std::string Namespaces::type2CWDef(const std::string& filepath,
 {
     if (_curNSs.find(filepath) == _curNSs.end()) {
         /* first time the file is seen */
-        _curNSs[filepath] = Namespace(filepath);
+        _curNSs[filepath] = std::make_unique<Namespace>(filepath);
     }
-    return _curNSs[filepath].type2CWDef(type);
+    return _curNSs[filepath]->type2CWDef(type);
 }
 
 void Namespaces::update(const std::string& filepath,
@@ -22,19 +30,19 @@ void Namespaces::update(const std::string& filepath,
 {
     if (_curNSs.find(filepath) == _curNSs.end()) {
         /* first time the file is seen */
-        _curNSs[filepath] = Namespace(filepath);
+        _curNSs[filepath] = std::make_unique<Namespace>(filepath);
     }
 
     /* get the namespaces */
     const auto nss = Namespaces::_getFullName(context);
 
     /* set the current namespace */
-    _curNSs[filepath].set(nss);
+    _curNSs[filepath]->set(nss);
 }
 
 void Namespaces::terminate() {
     for (auto& [filepath, ns] : _curNSs) {
-        ns.terminate();
+        ns->terminate();
     }
 }
 
@@ -42,7 +50,7 @@ std::string Namespaces::toString(const std::string& filepath,
     const std::string& separator, bool withRoot) const
 {
     if (const auto it = _curNSs.find(filepath); it != _curNSs.end()) {
-        return it->second.toString(separator, withRoot);
+        return it->second->toString(separator, withRoot);
     }
     return "";
 }
@@ -50,15 +58,31 @@ std::string Namespaces::toString(const std::string& filepath,
 Namespaces::Namespace::Namespace(
     const std::string& filepath) : _filepath(filepath), _nss({})
 {
-    std::ofstream file(_filepath, std::ios::app);
-    if (file.is_open()) {
-        file << '\n'
+    _header.open(_filepath, std::ios::app);
+    if (_header.is_open()) {
+        _header << '\n'
             << '\n';
-        file.close();
+        _header.flush();
     } else {
-        std::cerr << "Could not open file: " << _filepath << std::endl;
+        throw std::runtime_error("Could not open file: " + _filepath);
     }
+
+    const auto srcFilepath = getSourceFromHeader(_filepath);
+    _source.open(srcFilepath, std::ios::app);
+    if (!_source.is_open()) {
+        throw std::runtime_error("Could not open file: " + srcFilepath);
+    }
+
     _setRoot(false);
+}
+
+Namespaces::Namespace::~Namespace() {
+    if (_header.is_open()) {
+        _header.close();
+    }
+    if (_source.is_open()) {
+        _source.close();
+    }
 }
 
 std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
@@ -67,6 +91,22 @@ std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
     /* if the type is canonical, but not a class/struct/enum, return it as is */
     if (type.isCanonical() && !type->isRecordType()) {
         return type.getAsString();
+    }
+
+    /* check if it is from stdlib.h */
+    {
+        auto name = type.getAsString();
+        if (name.find("std::") == 0) {
+            name = name.substr(5);
+        }
+        if (name.rfind("const ", 0) == 0) {
+            name = name.substr(6);
+        }
+        for (const auto& stdType : _stdlibTypes) {
+            if (name.substr(0, stdType.size()) == stdType) {
+                return type.getAsString();
+            }
+        }
     }
 
     /* get the name with its namespaces */
@@ -90,9 +130,8 @@ std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
             ++nPointer;
         }
         if (str.back() == '&') {
-            std::cerr << "Warning: reference type in function definition: "
-                << str << std::endl;
-            return "REFERENCE_TYPE_NOT_SUPPORTED_YET";
+            throw std::runtime_error("Reference type is not supported: " +
+                type.getAsString());
         }
         if (nPointer > 0) str.pop_back(); /* remove ' ' before the first '*' */
 
@@ -111,9 +150,7 @@ std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
     } else if (const auto et = actualType->getAs<clang::EnumType>()) {
         ctx = et->getDecl()->getDeclContext();
     } else {
-        std::cerr << "Warning: unsupported type in function definition: "
-            << type.getAsString() << std::endl;
-        return "UNSUPPORTED_TYPE_IN_FUNCTION_DEFINITION";
+        throw std::runtime_error("Unsupported type: " + type.getAsString());
     }
     const auto nss = Namespaces::_getFullName(ctx);
 
@@ -153,43 +190,34 @@ std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
 void Namespaces::Namespace::push(const std::string& name) {
     if (name.empty()) return;
 
-    const auto srcFilepath = getSourceFromHeader(_filepath);
-    std::ofstream source(srcFilepath, std::ios::app);
-    std::ofstream header(_filepath, std::ios::app);
-    if (header.is_open() && source.is_open()) {
-        /* previous */
-        const auto prevCWName = toString("_");
+    /* previous */
+    const auto prevCWName = toString("_");
 
-        _nss.push_back(name);
+    _nss.push_back(name);
 
-        /* new */
-        const auto newCWName = toString("_");
-        const auto newComment = toString("::", false);
+    /* new */
+    const auto newCWName = toString("_");
+    const auto newComment = toString("::", false);
 
-        header << "#undef CW_SPACE\n"
-            << '\n'
-            << '\n'
-            << "/* ### " << newComment << " ### */\n"
-            << "#ifndef CW_" << newCWName << '\n'
-            << "#define CW_" << newCWName << " CW_BUILD_SPACE(CW_"
-            << prevCWName << ", " << name << ")\n"
-            << "#endif /* CW_" << newCWName << " */\n"
-            << "#define CW_SPACE CW_" << newCWName << '\n'
-            << '\n';
+    _header << "#undef CW_SPACE\n"
+        << '\n'
+        << '\n'
+        << "/* ### " << newComment << " ### */\n"
+        << "#ifndef CW_" << newCWName << '\n'
+        << "#define CW_" << newCWName << " CW_BUILD_SPACE(CW_"
+        << prevCWName << ", " << name << ")\n"
+        << "#endif /* CW_" << newCWName << " */\n"
+        << "#define CW_SPACE CW_" << newCWName << '\n'
+        << '\n';
+    _header.flush();
 
-        source << "#undef CW_SPACE\n"
-            << '\n'
-            << '\n'
-            << "/* ### " << newComment << " ### */\n"
-            << "#define CW_SPACE CW_" << newCWName << '\n'
-            << '\n';
-
-        header.close();
-        source.close();
-    } else {
-        std::cerr << "Could not open file: " << _filepath << " or "
-            << srcFilepath << std::endl;
-    }
+    _source << "#undef CW_SPACE\n"
+        << '\n'
+        << '\n'
+        << "/* ### " << newComment << " ### */\n"
+        << "#define CW_SPACE CW_" << newCWName << '\n'
+        << '\n';
+    _source.flush();
 }
 
 void Namespaces::Namespace::pop(bool redefine) {
@@ -242,22 +270,14 @@ void Namespaces::Namespace::terminate() {
         pop(false);
     }
 
-    const auto srcFilepath = getSourceFromHeader(_filepath);
-    std::ofstream source(srcFilepath, std::ios::app);
-    std::ofstream header(_filepath, std::ios::app);
-    if (header.is_open() && source.is_open()) {
-        header << "#undef CW_SPACE\n"
-            << '\n'
-            << '\n';
-        source << "#undef CW_SPACE\n"
-            << '\n'
-            << '\n';
-        header.close();
-        source.close();
-    } else {
-        std::cerr << "Could not open file: " << _filepath << " or "
-            << srcFilepath << std::endl;
-    }
+    _header << "#undef CW_SPACE\n"
+        << '\n'
+        << '\n';
+    _header.flush();
+    _source << "#undef CW_SPACE\n"
+        << '\n'
+        << '\n';
+    _source.flush();
 }
 
 std::string Namespaces::Namespace::toString(const std::string& separator,
@@ -275,29 +295,22 @@ std::string Namespaces::Namespace::toString(const std::string& separator,
 
 void Namespaces::Namespace::_setRoot(bool undefSpace) {
     const auto srcFilepath = getSourceFromHeader(_filepath);
-    std::ofstream source(srcFilepath, std::ios::app);
-    std::ofstream header(_filepath, std::ios::app);
-    if (header.is_open() && source.is_open()) {
-        if (undefSpace) {
-            header << "#undef CW_SPACE\n"
-                << '\n'
-                << '\n';
-            source << "#undef CW_SPACE\n"
-                << '\n'
-                << '\n';
-        }
-        header << "/* ### root ### */\n"
-            << "#define CW_SPACE CW_root\n"
+    if (undefSpace) {
+        _header << "#undef CW_SPACE\n"
+            << '\n'
             << '\n';
-        source << "/* ### root ### */\n"
-            << "#define CW_SPACE CW_root\n"
+        _source << "#undef CW_SPACE\n"
+            << '\n'
             << '\n';
-        header.close();
-        source.close();
-    } else {
-        std::cerr << "Could not open file: " << _filepath << " or "
-            << srcFilepath << std::endl;
     }
+    _header << "/* ### root ### */\n"
+        << "#define CW_SPACE CW_root\n"
+        << '\n';
+    _header.flush();
+    _source << "/* ### root ### */\n"
+        << "#define CW_SPACE CW_root\n"
+        << '\n';
+    _source.flush();
 }
 
 std::vector<std::string> Namespaces::_getFullName(
@@ -333,10 +346,9 @@ std::vector<std::string> Namespaces::_getFullName(
             //     );
             //     break;
             default:
-                std::cerr << "Unknown context kind: "
-                    << ctxKind << " which is " << ctx->getDeclKindName()
-                    << std::endl;
-                break;
+                throw std::runtime_error("Unsupported context kind: " +
+                    std::to_string(ctxKind) + " which is " +
+                    ctx->getDeclKindName());
         }
         ctx = ctx->getParent()->getEnclosingNamespaceContext();
         ctxKind = ctx->getDeclKind();

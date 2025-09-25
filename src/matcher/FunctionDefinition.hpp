@@ -5,8 +5,10 @@
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 
+
 namespace matcher {
 
+/* TODO handle constructors */
 class FunctionDefinition :
     public clang::ast_matchers::MatchFinder::MatchCallback {
 public:

@@ -5,8 +5,11 @@
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 
+
 namespace matcher {
 
+/* TODO: handle struct as struct */
+/* TOFIX: typedef struct/enum */
 class TypeDefinition :
     public clang::ast_matchers::MatchFinder::MatchCallback {
 public:

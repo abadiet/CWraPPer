@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
+#include <fstream>
+#include <memory>
 
 
 class Namespaces {
@@ -27,11 +29,7 @@ private:
     public:
         Namespace(const std::string& filepath);
         Namespace() = default;
-        ~Namespace() = default;
-        Namespace(const Namespace& other) = default;
-        Namespace(Namespace&& other) noexcept = default;
-        Namespace& operator=(const Namespace& other) = default;
-        Namespace& operator=(Namespace&& other) noexcept = default;
+        ~Namespace();
         std::string type2CWDef(const clang::QualType& type);
         void push(const std::string& name);
         void pop(bool redefine = true);
@@ -42,13 +40,15 @@ private:
     private:
         void _setRoot(bool undefSpace = true);
         std::string _filepath;
+        std::ofstream _header, _source;
         std::vector<std::string> _nss;
     };
 
     static std::vector<std::string> _getFullName(
         const clang::DeclContext* context);
 
-    std::unordered_map<std::string, Namespace> _curNSs;
+    static const std::string _stdlibTypes[28];
+    std::unordered_map<std::string, std::unique_ptr<Namespace>> _curNSs;
 };
 
 #endif /* CWRAPPER_MATCHER_NAMESPACES_HPP */

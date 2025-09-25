@@ -37,7 +37,7 @@ void matcher::FunctionDefinition::run(
         const auto to = getNewFilePath(from.str());
 
 #ifdef CWRAPPER_DEBUG
-        std::cout << "Function defined: " << fct->getReturnType().getAsString()
+        std::cout << "Function: " << fct->getReturnType().getAsString()
         << " " << fct->getNameAsString() << "(";
         for (unsigned int i = 0; i < fct->getNumParams(); ++i) {
             const auto param = fct->getParamDecl(i);
@@ -62,16 +62,14 @@ void matcher::FunctionDefinition::run(
         /* Ensure the file exists */
         setupHeaderFile(to, from.str());
 
-        /* Update the namespaces */
-        _namespaces.update(to, fct->getDeclContext());
+        std::ostringstream oss;
+        bool isMethod = false;
+        bool error = false;
+        try {
+            /* Update the namespaces */
+            _namespaces.update(to, fct->getDeclContext());
 
-        /* Write the function declaration */
-        std::ofstream header(to, std::ios::app);
-        const auto srcFilepath = getSourceFromHeader(to);
-        std::ofstream source(srcFilepath, std::ios::app);
-        if (header.is_open() && source.is_open()) {
-            std::ostringstream oss;
-
+            /* Write the function declaration */
             oss << _namespaces.type2CWDef(to, fct->getReturnType()) << "\n"
                 << "CW("
                 << FunctionDefinition::_nomalizeName(fct->getNameAsString())
@@ -79,14 +77,10 @@ void matcher::FunctionDefinition::run(
                 << "(\n";
 
             /* if it is a class member, we add the class as first parameter */
-            bool isMethod = false;
             const auto method = clang::dyn_cast<clang::CXXMethodDecl>(fct);
             if (method != nullptr && !method->isStatic()) {
                 if (clang::dyn_cast<clang::CXXConstructorDecl>(method)) {
-                    /* TODO handle constructors */
-                    header.close();
-                    source.close();
-                    return;
+                    throw std::runtime_error("Skipping constructor");
                 }
                 const auto record = method->getParent();
                 const auto type = clang::QualType(record->getTypeForDecl(), 0);
@@ -109,43 +103,75 @@ void matcher::FunctionDefinition::run(
                 oss << '\n';
             }
             oss << ")";
-
-            /* header */
-            header << oss.str() << ";\n"
+        } catch (const std::exception& e) {
+            error = true;
+            oss.str("");
+            std::ostringstream err;
+            err << "Error while processing function \""
+                << fct->getNameAsString()
+                << "\" at "
+                << Result.SourceManager->getFilename(
+                    fct->getLocation()).str()
+                << ":"
+                << Result.SourceManager->getSpellingLineNumber(
+                    fct->getLocation())
+                << ":"
+                << Result.SourceManager->getSpellingColumnNumber(
+                    fct->getLocation())
+                << " (exported to " << to << ") : " << e.what();
+            oss << "/* " << err.str() << " */\n"
                 << '\n';
+            std::cerr << err.str() << std::endl;
+        }
+
+        std::ofstream header(to, std::ios::app);
+        if (header.is_open()) {
+            header << oss.str();
+            if (!error) {
+                header << ";\n"
+                    << '\n';
+            }
             header.close();
+        } else {
+            std::cerr << "Could not open file: " << to << std::endl;
+            return;
+        }
 
-            /* source */
-            source << oss.str() << " {\n"
-                << "    ";
-            if (!fct->getReturnType()->isVoidType()) {
-                source << "return ";
-            }
-            /* if it is a class member, we call it from the self object */
-            {
-                const auto nss = _namespaces.toString(to, "::", false);
-                if (isMethod) {
-                    source << "static_cast<" << nss << " *>(self)->";
-                } else {
-                    source << nss << (nss.empty() ? "" : "::");
+        const auto srcFilepath = getSourceFromHeader(to);
+        std::ofstream source(srcFilepath, std::ios::app);
+        if (source.is_open()) {
+            source << oss.str();
+            if (!error) {
+                source << " {\n"
+                    << "    ";
+                if (!fct->getReturnType()->isVoidType()) {
+                    source << "return ";
                 }
-            }
-            source << fct->getNameAsString() << "(\n";
-            for (unsigned int i = 0; i < fct->getNumParams(); ++i) {
-                const auto param = fct->getParamDecl(i);
-                source << "        " << param->getNameAsString();
-                if (i + 1 < fct->getNumParams()) {
-                    source << ',';
+                /* if it is a class member, call it from the self object */
+                {
+                    const auto nss = _namespaces.toString(to, "::", false);
+                    if (isMethod) {
+                        source << "static_cast<" << nss << " *>(self)->";
+                    } else {
+                        source << nss << (nss.empty() ? "" : "::");
+                    }
                 }
-                source << '\n';
+                source << fct->getNameAsString() << "(\n";
+                for (unsigned int i = 0; i < fct->getNumParams(); ++i) {
+                    const auto param = fct->getParamDecl(i);
+                    source << "        " << param->getNameAsString();
+                    if (i + 1 < fct->getNumParams()) {
+                        source << ',';
+                    }
+                    source << '\n';
+                }
+                source << "    );\n"
+                    << "}\n"
+                    << '\n';
             }
-            source << "    );\n"
-                << "}\n"
-                << '\n';
             source.close();
         } else {
-            std::cerr << "Could not open file: " << to << " or "
-                << srcFilepath << std::endl;
+            std::cerr << "Could not open file: " << to << std::endl;
         }
     }
 }

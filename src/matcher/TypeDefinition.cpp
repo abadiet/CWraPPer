@@ -2,6 +2,7 @@
 #include "../utils.hpp"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 #define BINDING_NAME "TypeDefinition"
 
@@ -51,7 +52,7 @@ void matcher::TypeDefinition::run(
         const auto to = getNewFilePath(from.str());
 
 #ifdef CWRAPPER_DEBUG
-        std::cout << "Type defined: " << obj->getNameAsString() << " at "
+        std::cout << "Type: " << obj->getNameAsString() << " at "
             << Result.SourceManager->getFilename(obj->getLocation()).str()
             << ":"
             << Result.SourceManager->getSpellingLineNumber(obj->getLocation())
@@ -63,19 +64,18 @@ void matcher::TypeDefinition::run(
         /* Ensure the file exists */
         setupHeaderFile(to, from.str());
 
-        /* Update the namespaces */
-        _namespaces.update(to, obj->getDeclContext());
+        std::ostringstream oss;
+        try {
+            /* Update the namespaces */
+            _namespaces.update(to, obj->getDeclContext());
 
-        /* Write the typedef */
-        std::ofstream file(to, std::ios::app);
-        if (file.is_open()) {
-            /* TODO: handle struct as struct */
-            /* TOFIX: typedef struct/enum */
-
+            /* Write the typedef */
             std::string typeName;
             if (llvm::dyn_cast<clang::RecordDecl>(obj)) {
                 typeName = "void";
-            } else if (const auto enumDecl = llvm::dyn_cast<clang::EnumDecl>(obj)) {
+            } else if (
+                const auto enumDecl = llvm::dyn_cast<clang::EnumDecl>(obj)
+            ) {
                 if (enumDecl->isScoped()) {
                     typeName = _namespaces.type2CWDef(to,
                         enumDecl->getIntegerType());
@@ -92,9 +92,30 @@ void matcher::TypeDefinition::run(
                 typeName = _namespaces.type2CWDef(to,
                     clang::QualType(obj->getTypeForDecl(), 0));
             }
-            file << "typedef " << typeName << " CW("
+            oss << "typedef " << typeName << " CW("
                 << obj->getNameAsString() << ");\n"
                 << '\n';
+        } catch (const std::exception& e) {
+            oss.str("");
+            std::ostringstream err;
+            err << "Error while processing typedef \"" << obj->getNameAsString()
+                << "\" at "
+                << Result.SourceManager->getFilename(obj->getLocation()).str()
+                << ":"
+                << Result.SourceManager->getSpellingLineNumber(
+                    obj->getLocation())
+                << ":"
+                << Result.SourceManager->getSpellingColumnNumber(
+                    obj->getLocation())
+                << " (exported to " << to << ") : " << e.what();
+            oss << "/* " << err.str() << " */\n"
+                << '\n';
+            std::cerr << err.str() << std::endl;
+        }
+
+        std::ofstream file(to, std::ios::app);
+        if (file.is_open()) {
+            file << oss.str();
             file.close();
         } else {
             std::cerr << "Could not open file: " << to << std::endl;
