@@ -161,15 +161,13 @@ void setupHeaderFile(const std::string& filePath, const std::string& origin) {
         }
     }
 
-    /* Create its .c pair if it does not exist */
+    /* Create its source file if it does not exist */
     {
-        auto cPath = p;
-        cPath.replace_extension(".cpp");
+        auto cPath = getSourceFromHeader(filePath);
         if (!std::filesystem::exists(cPath)) {
             std::ofstream file(cPath);
             if (file.is_open()) {
                 file << "#include \"" << p.filename().string() << "\"\n"
-                    << "#include \"" << origin << "\"\n"
                     << '\n'
                     << "#ifdef __cplusplus\n"
                     << "extern \"C\" {\n"
@@ -178,8 +176,7 @@ void setupHeaderFile(const std::string& filePath, const std::string& origin) {
                     << '\n';
                 file.close();
             } else {
-                std::cerr << "Could not create file: " << cPath.string()
-                    << std::endl;
+                std::cerr << "Could not create file: " << cPath << std::endl;
             }
         }
     }
@@ -191,4 +188,10 @@ std::string normalizeFileName(const std::string& name) {
     std::replace(res.begin(), res.end(), ' ', '_');
     std::transform(res.begin(), res.end(), res.begin(), ::toupper);
     return res;
+}
+
+std::string getSourceFromHeader(const std::string& header) {
+    auto path = std::filesystem::path(header);
+    path.replace_extension(".cpp");
+    return path.string();
 }

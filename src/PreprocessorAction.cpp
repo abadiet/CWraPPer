@@ -37,6 +37,8 @@ void PreprocessorFinder::InclusionDirective(clang::SourceLocation HashLoc,
     const clang::Module *SuggestedModule,
     bool ModuleImported, clang::SrcMgr::CharacteristicKind FileType)
 {
+    /* TODO: include from cpp as well */
+
     const auto from = _compiler.getSourceManager().getFilename(HashLoc);
     if (
         !from.empty() &&
@@ -72,7 +74,6 @@ void PreprocessorFinder::InclusionDirective(clang::SourceLocation HashLoc,
         } else {
             std::cerr << "Could not open file: " << to << std::endl;
         }
-
     }
 }
 

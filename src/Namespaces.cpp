@@ -3,6 +3,10 @@
 #include <fstream>
 
 
+/* forward declaration from utils.hpp */
+std::string getSourceFromHeader(const std::string& header);
+
+
 std::string Namespaces::type2CWDef(const std::string& filepath,
     const clang::QualType& type)
 {
@@ -34,6 +38,15 @@ void Namespaces::terminate() {
     }
 }
 
+std::string Namespaces::toString(const std::string& filepath,
+    const std::string& separator, bool withRoot) const
+{
+    if (const auto it = _curNSs.find(filepath); it != _curNSs.end()) {
+        return it->second.toString(separator, withRoot);
+    }
+    return "";
+}
+
 Namespaces::Namespace::Namespace(
     const std::string& filepath) : _filepath(filepath), _nss({})
 {
@@ -51,15 +64,24 @@ Namespaces::Namespace::Namespace(
 std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
     if (type.isNull()) return "void";
 
-    /* if the type is canonical, return it as is */
-    if (type.isCanonical()) return type.getAsString();
+    /* if the type is canonical, but not a class/struct/enum, return it as is */
+    if (type.isCanonical() && !type->isRecordType()) {
+        return type.getAsString();
+    }
 
     /* get the name with its namespaces */
     std::string name;
     clang::QualType actualType = type;
     int nPointer = 0;
     {
-        auto str = type.getAsString();
+        auto str = actualType.getAsString();
+        if (str.substr(0, 6) == "class ") {
+            str = str.substr(6);
+        } else if (str.substr(0, 7) == "struct ") {
+            str = str.substr(7);
+        } else if (str.substr(0, 5) == "enum ") {
+            str = str.substr(5);
+        }
 
         /* check for '*' */
         while (str.back() == '*') {
@@ -131,19 +153,20 @@ std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
 void Namespaces::Namespace::push(const std::string& name) {
     if (name.empty()) return;
 
-    std::ofstream file(_filepath, std::ios::app);
-    if (file.is_open()) {
+    const auto srcFilepath = getSourceFromHeader(_filepath);
+    std::ofstream source(srcFilepath, std::ios::app);
+    std::ofstream header(_filepath, std::ios::app);
+    if (header.is_open() && source.is_open()) {
         /* previous */
         const auto prevCWName = toString("_");
-        const auto prevComment = toString("::");
 
         _nss.push_back(name);
 
         /* new */
         const auto newCWName = toString("_");
-        const auto newComment = toString("::");
+        const auto newComment = toString("::", false);
 
-        file << "#undef CW_SPACE\n"
+        header << "#undef CW_SPACE\n"
             << '\n'
             << '\n'
             << "/* ### " << newComment << " ### */\n"
@@ -153,9 +176,19 @@ void Namespaces::Namespace::push(const std::string& name) {
             << "#endif /* CW_" << newCWName << " */\n"
             << "#define CW_SPACE CW_" << newCWName << '\n'
             << '\n';
-        file.close();
+
+        source << "#undef CW_SPACE\n"
+            << '\n'
+            << '\n'
+            << "/* ### " << newComment << " ### */\n"
+            << "#define CW_SPACE CW_" << newCWName << '\n'
+            << '\n';
+
+        header.close();
+        source.close();
     } else {
-        std::cerr << "Could not open file: " << _filepath << std::endl;
+        std::cerr << "Could not open file: " << _filepath << " or "
+            << srcFilepath << std::endl;
     }
 }
 
@@ -209,41 +242,61 @@ void Namespaces::Namespace::terminate() {
         pop(false);
     }
 
-    std::ofstream file(_filepath, std::ios::app);
-    if (file.is_open()) {
-        file << "#undef CW_SPACE\n"
+    const auto srcFilepath = getSourceFromHeader(_filepath);
+    std::ofstream source(srcFilepath, std::ios::app);
+    std::ofstream header(_filepath, std::ios::app);
+    if (header.is_open() && source.is_open()) {
+        header << "#undef CW_SPACE\n"
             << '\n'
             << '\n';
-        file.close();
+        source << "#undef CW_SPACE\n"
+            << '\n'
+            << '\n';
+        header.close();
+        source.close();
     } else {
-        std::cerr << "Could not open file: " << _filepath << std::endl;
+        std::cerr << "Could not open file: " << _filepath << " or "
+            << srcFilepath << std::endl;
     }
 }
 
-std::string Namespaces::Namespace::toString(
-    const std::string& separator) const
+std::string Namespaces::Namespace::toString(const std::string& separator,
+    bool withRoot) const
 {
-    std::string res = "root";
+    std::string res = (withRoot ? "root" : "");
     for (const auto& ns : _nss) {
         res += separator + ns;
+    }
+    if (!res.empty() && !withRoot) {
+        res = res.substr(separator.size());
     }
     return res;
 }
 
 void Namespaces::Namespace::_setRoot(bool undefSpace) {
-    std::ofstream file(_filepath, std::ios::app);
-    if (file.is_open()) {
+    const auto srcFilepath = getSourceFromHeader(_filepath);
+    std::ofstream source(srcFilepath, std::ios::app);
+    std::ofstream header(_filepath, std::ios::app);
+    if (header.is_open() && source.is_open()) {
         if (undefSpace) {
-            file << "#undef CW_SPACE\n"
+            header << "#undef CW_SPACE\n"
+                << '\n'
+                << '\n';
+            source << "#undef CW_SPACE\n"
                 << '\n'
                 << '\n';
         }
-        file << "/* ### root ### */\n"
+        header << "/* ### root ### */\n"
             << "#define CW_SPACE CW_root\n"
             << '\n';
-        file.close();
+        source << "/* ### root ### */\n"
+            << "#define CW_SPACE CW_root\n"
+            << '\n';
+        header.close();
+        source.close();
     } else {
-        std::cerr << "Could not open file: " << _filepath << std::endl;
+        std::cerr << "Could not open file: " << _filepath << " or "
+            << srcFilepath << std::endl;
     }
 }
 

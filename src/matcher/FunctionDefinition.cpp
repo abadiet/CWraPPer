@@ -2,6 +2,7 @@
 #include "../utils.hpp"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 #define BINDING_NAME "FunctionDefinition"
 
@@ -65,26 +66,86 @@ void matcher::FunctionDefinition::run(
         _namespaces.update(to, fct->getDeclContext());
 
         /* Write the function declaration */
-        std::ofstream file(to, std::ios::app);
-        if (file.is_open()) {
-            file << _namespaces.type2CWDef(to, fct->getReturnType())
-                << " CW("
+        std::ofstream header(to, std::ios::app);
+        const auto srcFilepath = getSourceFromHeader(to);
+        std::ofstream source(srcFilepath, std::ios::app);
+        if (header.is_open() && source.is_open()) {
+            std::ostringstream oss;
+
+            oss << _namespaces.type2CWDef(to, fct->getReturnType()) << "\n"
+                << "CW("
                 << FunctionDefinition::_nomalizeName(fct->getNameAsString())
-                << ") (";
+                << ")\n"
+                << "(\n";
+
+            /* if it is a class member, we add the class as first parameter */
+            bool isMethod = false;
+            const auto method = clang::dyn_cast<clang::CXXMethodDecl>(fct);
+            if (method != nullptr && !method->isStatic()) {
+                if (clang::dyn_cast<clang::CXXConstructorDecl>(method)) {
+                    /* TODO handle constructors */
+                    header.close();
+                    source.close();
+                    return;
+                }
+                const auto record = method->getParent();
+                const auto type = clang::QualType(record->getTypeForDecl(), 0);
+                oss << "    " << _namespaces.type2CWDef(to, type) << " * self";
+                if (fct->getNumParams() > 0) {
+                    oss << ',';
+                }
+                oss << '\n';
+                isMethod = true;
+            }
+
+            /* then the other parameters */
             for (unsigned int i = 0; i < fct->getNumParams(); ++i) {
                 const auto param = fct->getParamDecl(i);
-                file << _namespaces.type2CWDef(to, param->getType())
-                    << " "
-                    << param->getNameAsString();
+                oss << "    " << _namespaces.type2CWDef(to, param->getType())
+                    << ' ' << param->getNameAsString();
                 if (i + 1 < fct->getNumParams()) {
-                    file << ", ";
+                    oss << ',';
+                }
+                oss << '\n';
+            }
+            oss << ")";
+
+            /* header */
+            header << oss.str() << ";\n"
+                << '\n';
+            header.close();
+
+            /* source */
+            source << oss.str() << " {\n"
+                << "    ";
+            if (!fct->getReturnType()->isVoidType()) {
+                source << "return ";
+            }
+            /* if it is a class member, we call it from the self object */
+            {
+                const auto nss = _namespaces.toString(to, "::", false);
+                if (isMethod) {
+                    source << "static_cast<" << nss << " *>(self)->";
+                } else {
+                    source << nss << (nss.empty() ? "" : "::");
                 }
             }
-            file << ");\n"
+            source << fct->getNameAsString() << "(\n";
+            for (unsigned int i = 0; i < fct->getNumParams(); ++i) {
+                const auto param = fct->getParamDecl(i);
+                source << "        " << param->getNameAsString();
+                if (i + 1 < fct->getNumParams()) {
+                    source << ',';
+                }
+                source << '\n';
+            }
+            source << "    );\n"
+                << "}\n"
                 << '\n';
-            file.close();
+            source.close();
         } else {
-            std::cerr << "Could not open file: " << to << std::endl;
+            std::cerr << "Could not open file: " << to << " or "
+                << srcFilepath << std::endl;
         }
     }
 }

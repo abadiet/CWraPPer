@@ -19,6 +19,9 @@ public:
 
     void terminate();
 
+    std::string toString(const std::string& filepath,
+        const std::string& separator = "_", bool withRoot = true) const;
+
 private:
     class Namespace {
     public:
@@ -34,7 +37,8 @@ private:
         void pop(bool redefine = true);
         void set(const std::vector<std::string>& nss);
         void terminate();
-        std::string toString(const std::string& separator = "_") const;
+        std::string toString(const std::string& separator = "_",
+            bool withRoot = true) const;
     private:
         void _setRoot(bool undefSpace = true);
         std::string _filepath;

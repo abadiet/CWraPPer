@@ -44,8 +44,9 @@ void matcher::TypeDefinition::run(
     if (
         obj != nullptr &&
         from.starts_with("/Users") && /* TODO too dirty */
+        obj->getNameAsString() != "" &&
         /* to avoid defining it twice (idk why clang call it twice) */
-        obj->getNameAsString() != _lastTypeDefined
+        obj->getNameAsString() != _lastTypeDefined 
     ) {
         const auto to = getNewFilePath(from.str());
 
@@ -68,12 +69,31 @@ void matcher::TypeDefinition::run(
         /* Write the typedef */
         std::ofstream file(to, std::ios::app);
         if (file.is_open()) {
-            auto type = Result.Context->getTypeDeclType(obj).getCanonicalType()
-                .getAsString();
-            /* TODO consider using struct for class definitions */
-            if (type.substr(0, 6) == "class ") type = "void";
-            file << "typedef " << type << " CW(" << obj->getNameAsString()
-                << ");\n"
+            /* TODO: handle struct as struct */
+            /* TOFIX: typedef struct/enum */
+
+            std::string typeName;
+            if (llvm::dyn_cast<clang::RecordDecl>(obj)) {
+                typeName = "void";
+            } else if (const auto enumDecl = llvm::dyn_cast<clang::EnumDecl>(obj)) {
+                if (enumDecl->isScoped()) {
+                    typeName = _namespaces.type2CWDef(to,
+                        enumDecl->getIntegerType());
+                } else {
+                    typeName = _namespaces.type2CWDef(to,
+                        enumDecl->getPromotionType());
+                }
+            } else if (
+                const auto tdef = llvm::dyn_cast<clang::TypedefNameDecl>(obj)
+            ) {
+                typeName = _namespaces.type2CWDef(to,
+                    tdef->getUnderlyingType());
+            } else {
+                typeName = _namespaces.type2CWDef(to,
+                    clang::QualType(obj->getTypeForDecl(), 0));
+            }
+            file << "typedef " << typeName << " CW("
+                << obj->getNameAsString() << ");\n"
                 << '\n';
             file.close();
         } else {
