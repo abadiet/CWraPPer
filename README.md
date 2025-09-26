@@ -6,5 +6,11 @@ C Wrapper generator for C++
 
 You can find an example at [https://github.com/abadiet/ECSS-SMP-C](https://github.com/abadiet/ECSS-SMP-C).
 
+## TODO
+- [ ] handle references
+- [ ] properly handle struct and enum
+- [ ] handle constructors
+- [ ] handle public variables
+
 ## Credits
 https://github.com/vbouquet/tutoriel-ast-clang

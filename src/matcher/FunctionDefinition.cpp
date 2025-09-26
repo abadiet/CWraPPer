@@ -75,6 +75,15 @@ void matcher::FunctionDefinition::run(
                 throw std::runtime_error("Skipping templated function");
             }
 
+            /* check if a class/struct is returned */
+            if (
+                fct->getReturnType()->isClassType() ||
+                fct->getReturnType()->isStructureType()
+            ) {
+                throw std::runtime_error(
+                    "Skipping function that returns a class/struct");
+            }
+
             /* Write the function declaration */
             returnType = _namespaces.type2CWDef(to, fct->getReturnType());
             oss << returnType << "\n"
