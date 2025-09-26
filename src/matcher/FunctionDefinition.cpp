@@ -109,8 +109,15 @@ void matcher::FunctionDefinition::run(
             /* then the other parameters */
             for (unsigned int i = 0; i < fct->getNumParams(); ++i) {
                 const auto param = fct->getParamDecl(i);
-                oss << "    " << _namespaces.type2CWDef(to, param->getType())
-                    << ' ' << param->getNameAsString();
+                oss << "    " << _namespaces.type2CWDef(to, param->getType());
+                if (
+                    param->getType()->isClassType() ||
+                    param->getType()->isStructureType()
+                ) {
+                    /* this is a class/struct: passing a pointer instead */
+                    oss << " *";
+                }
+                oss << ' ' << param->getNameAsString();
                 if (i + 1 < fct->getNumParams()) {
                     oss << ',';
                 }
@@ -174,9 +181,19 @@ void matcher::FunctionDefinition::run(
                 source << fct->getNameAsString() << "(\n";
                 for (unsigned int i = 0; i < fct->getNumParams(); ++i) {
                     const auto param = fct->getParamDecl(i);
-                    source << "        static_cast<"
-                        << param->getType().getAsString() << ">("
-                        << param->getNameAsString() << ")";
+                    if (
+                        param->getType()->isClassType() ||
+                        param->getType()->isStructureType()
+                    ) {
+                        /* this is a class/struct: passing a pointer instead */
+                        source << "        *static_cast<"
+                            << param->getType().getAsString() << "*>("
+                            << param->getNameAsString() << ")";
+                    } else {
+                        source << "        static_cast<"
+                            << param->getType().getAsString() << ">("
+                            << param->getNameAsString() << ")";
+                    }
                     if (i + 1 < fct->getNumParams()) {
                         source << ',';
                     }
