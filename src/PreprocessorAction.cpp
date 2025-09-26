@@ -60,15 +60,11 @@ void PreprocessorFinder::InclusionDirective(clang::SourceLocation HashLoc,
 
         std::ofstream file(to, std::ios::app);
         if (file.is_open()) {
-            file << "#include ";
             if (IsAngled) {
-                file << "<" << FileName.str() << ">\n";
+                file << "/* #include <" << FileName.str() << "> */\n";
             } else {
-                auto name = FileName.str();
-                if (name.substr(name.size() - 2) == "pp") {
-                    name = name.substr(0, name.size() - 2);
-                }
-                file << "\"" << name << "\"\n";
+                /* Considering this is a local cxx file to wrap */
+                file << "#include \"" << getNewFilePath(FileName.str()) << "\"\n";
             }
             file.close();
         } else {

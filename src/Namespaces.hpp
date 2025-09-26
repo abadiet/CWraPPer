@@ -47,7 +47,7 @@ private:
     static std::vector<std::string> _getFullName(
         const clang::DeclContext* context);
 
-    static const std::string _stdlibTypes[28];
+    static const std::string _stdTypes[33];
     std::unordered_map<std::string, std::unique_ptr<Namespace>> _curNSs;
 };
 

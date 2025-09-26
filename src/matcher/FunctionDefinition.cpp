@@ -65,12 +65,19 @@ void matcher::FunctionDefinition::run(
         std::ostringstream oss;
         bool isMethod = false;
         bool error = false;
+        std::string returnType;
         try {
             /* Update the namespaces */
             _namespaces.update(to, fct->getDeclContext());
 
+            /* check if the function is templated */
+            if (fct->isTemplated()) {
+                throw std::runtime_error("Skipping templated function");
+            }
+
             /* Write the function declaration */
-            oss << _namespaces.type2CWDef(to, fct->getReturnType()) << "\n"
+            returnType = _namespaces.type2CWDef(to, fct->getReturnType());
+            oss << returnType << "\n"
                 << "CW("
                 << FunctionDefinition::_nomalizeName(fct->getNameAsString())
                 << ")\n"
@@ -82,9 +89,7 @@ void matcher::FunctionDefinition::run(
                 if (clang::dyn_cast<clang::CXXConstructorDecl>(method)) {
                     throw std::runtime_error("Skipping constructor");
                 }
-                const auto record = method->getParent();
-                const auto type = clang::QualType(record->getTypeForDecl(), 0);
-                oss << "    " << _namespaces.type2CWDef(to, type) << " * self";
+                oss << "    CW() * self";
                 if (fct->getNumParams() > 0) {
                     oss << ',';
                 }
@@ -145,7 +150,8 @@ void matcher::FunctionDefinition::run(
                 source << " {\n"
                     << "    ";
                 if (!fct->getReturnType()->isVoidType()) {
-                    source << "return ";
+                    source << "return static_cast<" << returnType << ">(\n"
+                        << "    ";
                 }
                 /* if it is a class member, call it from the self object */
                 {
@@ -159,13 +165,19 @@ void matcher::FunctionDefinition::run(
                 source << fct->getNameAsString() << "(\n";
                 for (unsigned int i = 0; i < fct->getNumParams(); ++i) {
                     const auto param = fct->getParamDecl(i);
-                    source << "        " << param->getNameAsString();
+                    source << "        static_cast<"
+                        << param->getType().getAsString() << ">("
+                        << param->getNameAsString() << ")";
                     if (i + 1 < fct->getNumParams()) {
                         source << ',';
                     }
                     source << '\n';
                 }
-                source << "    );\n"
+                source << "    ";
+                if (!fct->getReturnType()->isVoidType()) {
+                    source << ")";
+                }
+                source << ");\n"
                     << "}\n"
                     << '\n';
             }
@@ -181,24 +193,3 @@ std::string matcher::FunctionDefinition::_nomalizeName(const std::string& name) 
     std::replace(res.begin(), res.end(), '~', '_');
     return res;
 }
-
-// const clang::Type* getNamedType(const clang::QualType& type) {
-//     auto T = type.getTypePtrOrNull();
-
-//     while (true) {
-//         if (const PointerType *PT = dyn_cast<PointerType>(T))
-//             T = PT->getPointeeType().getTypePtr();
-//         else if (const LValueReferenceType *LT = dyn_cast<LValueReferenceType>(T))
-//             T = LT->getPointeeType().getTypePtr();
-//         else if (const RValueReferenceType *RT = dyn_cast<RValueReferenceType>(T))
-//             T = RT->getPointeeType().getTypePtr();
-//         else if (const ArrayType *AT = dyn_cast<ArrayType>(T))
-//             T = AT->getElementType().getTypePtr();
-//         else if (const ElaboratedType *ET = dyn_cast<ElaboratedType>(T))
-//             T = ET->getNamedType().getTypePtr();
-//         else
-//             break; // reached a "named" or builtin type
-//     }
-
-//     return T;
-// }

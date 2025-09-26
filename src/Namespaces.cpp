@@ -2,13 +2,14 @@
 #include <iostream>
 
 
-const std::string Namespaces::_stdlibTypes[28] = {
+const std::string Namespaces::_stdTypes[33] = {
     "int8_t", "int16_t","int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t",
     "uint64_t", "int_least8_t", "int_least16_t", "int_least32_t",
     "int_least64_t", "uint_least8_t", "uint_least16_t", "uint_least32_t",
     "uint_least64_t", "int_fast8_t", "int_fast16_t", "int_fast32_t",
     "int_fast64_t", "uint_fast8_t", "uint_fast16_t", "uint_fast32_t",
-    "uint_fast64_t", "intptr_t", "uintptr_t", "intmax_t", "uintmax_t"
+    "uint_fast64_t", "intptr_t", "uintptr_t", "intmax_t", "uintmax_t", "size_t",
+    "div_t", "ldiv_t", "ptrdiff_t", "wchar_t"
 };
 
 /* forward declaration from utils.hpp */
@@ -88,23 +89,31 @@ Namespaces::Namespace::~Namespace() {
 std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
     if (type.isNull()) return "void";
 
+    /* check if it a template */
+    if (type->isTemplateTypeParmType()) {
+        throw std::runtime_error("Template type is not supported: " +
+            type.getAsString());
+    }
+
     /* if the type is canonical, but not a class/struct/enum, return it as is */
     if (type.isCanonical() && !type->isRecordType()) {
         return type.getAsString();
     }
 
-    /* check if it is from stdlib.h */
+    /* check if it is a std type */
     {
         auto name = type.getAsString();
+        bool isConst = false;
+        if (name.find("const ") == 0) {
+            name = name.substr(6);
+            isConst = true;
+        }
         if (name.find("std::") == 0) {
             name = name.substr(5);
         }
-        if (name.rfind("const ", 0) == 0) {
-            name = name.substr(6);
-        }
-        for (const auto& stdType : _stdlibTypes) {
+        for (const auto& stdType : _stdTypes) {
             if (name.substr(0, stdType.size()) == stdType) {
-                return type.getAsString();
+                return (isConst ? "const " : "") + name;
             }
         }
     }
@@ -113,8 +122,13 @@ std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
     std::string name;
     clang::QualType actualType = type;
     int nPointer = 0;
+    bool isConst = false;
     {
         auto str = actualType.getAsString();
+        if (str.find("const ") == 0) {
+            str = str.substr(6);
+            isConst = true;
+        }
         if (str.substr(0, 6) == "class ") {
             str = str.substr(6);
         } else if (str.substr(0, 7) == "struct ") {
@@ -156,8 +170,7 @@ std::string Namespaces::Namespace::type2CWDef(const clang::QualType& type) {
 
     /* check for const attribute */
     std::string res;
-    if (name.rfind("const ") == 0) {
-        name = name.substr(6); /* remove "const " */
+    if (isConst) {
         res = "const CW(";
     } else {
         res = "CW(";
@@ -257,7 +270,13 @@ void Namespaces::Namespace::set(
     /* Push the new namespaces */
     if (nss.empty()) {
         _setRoot();
+    } else if (i == nss.size()) {
+        /* redefine the last one */
+        const auto back = _nss.back();
+        _nss.pop_back();
+        push(back);
     } else {
+        /* push some new ones */
         while (i < nss.size()) {
             push(nss[i]);
             ++i;
